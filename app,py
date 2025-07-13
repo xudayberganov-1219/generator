@@ -1,0 +1,74 @@
+# Kodning asosiy qismi
+import torch
+from diffusers import StableDiffusionPipeline
+from transformers import MarianMTModel, MarianTokenizer
+import gradio as gr
+
+device = "cuda" if torch.cuda.is_available() else "cpu"
+dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+
+# Stable Diffusion modelini yuklash
+pipe = StableDiffusionPipeline.from_pretrained(
+    "runwayml/stable-diffusion-v1-5",
+    torch_dtype=dtype
+).to(device)
+
+# Tarjima modeli
+model_name = "Helsinki-NLP/opus-mt-mul-en"
+translator_tokenizer = MarianTokenizer.from_pretrained(model_name)
+translator_model = MarianMTModel.from_pretrained(model_name).to(device)
+
+# Tarjima funksiyasi
+def translate_to_english(text):
+    batch = translator_tokenizer.prepare_seq2seq_batch([text], return_tensors="pt").to(device)
+    gen = translator_model.generate(**batch, max_length=128)
+    return translator_tokenizer.batch_decode(gen, skip_special_tokens=True)[0]
+
+# Promptlar ro'yxati
+recommended_prompts = [
+    "A quiet street in Paris at sunrise, with golden sunlight gently illuminating the facades of old stone buildings. A small café with red awnings is opening for the day. The Eiffel Tower is visible in the distance.",
+    "A rainy night in Tokyo, neon lights reflecting on the wet pavement. People with transparent umbrellas walking through Shibuya crossing.",
+    "A futuristic astronaut standing on a glowing alien planet with two moons and purple skies. Crystal rocks floating around."
+]
+
+# Rasm yaratish funksiyasi
+def generate_image(selected_prompt, user_text, guidance, steps):
+    final_prompt = user_text if user_text.strip() else selected_prompt
+    translated = translate_to_english(final_prompt)
+    image = pipe(
+        translated,
+        guidance_scale=guidance,
+        num_inference_steps=steps
+    ).images[0]
+    return image
+
+# Gradio interfeysi
+with gr.Blocks(theme=gr.themes.Soft()) as app:
+    gr.Markdown("""
+    <div align="center" style="font-size: 26px; font-weight: bold;">
+        🎨 AI Image Generator
+    </div>
+    <div align="center" style="color: #555;">
+        Write your own prompt or select from suggested prompts. Any language is accepted!
+    </div>
+    """)
+
+    with gr.Row():
+        with gr.Column():
+            dropdown = gr.Dropdown(label="📌 Recommended Prompts", choices=recommended_prompts, value=recommended_prompts[0])
+            user_text = gr.Textbox(label="✍️ Or type your own prompt", placeholder="e.g., Oq qush tog‘ ustida uchmoqda", lines=2)
+            guidance = gr.Slider(5, 15, value=8.5, step=0.5, label="🎛️ Guidance Scale")
+            steps = gr.Slider(20, 100, value=50, step=5, label="🔁 Inference Steps")
+            generate_btn = gr.Button("🎨 Generate Image")
+        with gr.Column():
+            image_output = gr.Image(label="📷 Result", type="pil", height=512)
+
+    generate_btn.click(
+        fn=generate_image,
+        inputs=[dropdown, user_text, guidance, steps],
+        outputs=image_output
+    )
+
+    gr.Markdown("<div align='center' style='color: #aaa;'>By Ilyos Xudayberganov</div>")
+
+app.launch()
