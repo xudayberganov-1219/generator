@@ -1,0 +1,7 @@
+diffusers
+transformers
+accelerate
+gradio
+sentencepiece
+torch
+torchvision
